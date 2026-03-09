@@ -139,7 +139,22 @@ def to_dict(obj):
 async def get_shopping_list(args):
     # Get actual ingredient items to buy (not just recipes)
     result = await cd.get_ingredient_items()
-    return to_dict(result)
+    items = to_dict(result)
+
+    # Deduplicate by ID (same ID twice = API bug, different IDs with same name = legitimate)
+    if isinstance(items, list):
+        seen_ids = set()
+        unique_items = []
+        for item in items:
+            item_id = item.get('id')
+            if item_id and item_id not in seen_ids:
+                seen_ids.add(item_id)
+                unique_items.append(item)
+            elif not item_id:
+                # No ID, include anyway
+                unique_items.append(item)
+        return unique_items
+    return items
 
 @tool("add_recipes_to_shopping_list")
 async def add_recipes_to_shopping_list(args):
