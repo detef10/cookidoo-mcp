@@ -135,26 +135,59 @@ def to_dict(obj):
         return {k: to_dict(v) for k, v in obj.items()}
     return obj
 
+def parse_amount(description):
+    """Parse amount and unit from description like '60 g' or '500 ml'."""
+    if not description:
+        return None, None, description
+    match = re.match(r'^([\d.,]+)\s*(.*)$', description.strip())
+    if match:
+        try:
+            amount = float(match.group(1).replace(',', '.'))
+            unit = match.group(2).strip()
+            return amount, unit, description
+        except ValueError:
+            pass
+    return None, None, description
+
 @tool("get_shopping_list")
 async def get_shopping_list(args):
     # Get actual ingredient items to buy (not just recipes)
     result = await cd.get_ingredient_items()
     items = to_dict(result)
 
-    # Deduplicate by ID (same ID twice = API bug, different IDs with same name = legitimate)
-    if isinstance(items, list):
-        seen_ids = set()
-        unique_items = []
-        for item in items:
-            item_id = item.get('id')
-            if item_id and item_id not in seen_ids:
-                seen_ids.add(item_id)
-                unique_items.append(item)
-            elif not item_id:
-                # No ID, include anyway
-                unique_items.append(item)
-        return unique_items
-    return items
+    if not isinstance(items, list):
+        return items
+
+    # Aggregate items by name and unit
+    aggregated = {}
+    for item in items:
+        name = item.get('name', '')
+        is_owned = item.get('is_owned', False)
+        amount, unit, orig_desc = parse_amount(item.get('description', ''))
+
+        # Key by name + unit + owned status (keep owned/not-owned separate)
+        key = (name.lower(), unit.lower() if unit else '', is_owned)
+
+        if key in aggregated:
+            # Sum amounts if both have parseable amounts with same unit
+            existing = aggregated[key]
+            if amount is not None and existing.get('_amount') is not None:
+                existing['_amount'] += amount
+                existing['description'] = f"{existing['_amount']:g} {unit}".strip()
+            # Keep first item's other properties
+        else:
+            aggregated[key] = {
+                **item,
+                '_amount': amount,  # Track numeric amount for summing
+            }
+
+    # Remove internal _amount field and return
+    result_items = []
+    for item in aggregated.values():
+        item.pop('_amount', None)
+        result_items.append(item)
+
+    return result_items
 
 @tool("add_recipes_to_shopping_list")
 async def add_recipes_to_shopping_list(args):
