@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookidoo MCP Client</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+        .header { background: linear-gradient(135deg, #4CAF50, #2E7D32); color: white; padding: 24px; text-align: center; }
+        .header h1 { font-size: 1.8rem; }
+        .header p { opacity: 0.85; margin-top: 4px; }
+        .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: #2E7D32; }
+        .form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        input, select { padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; flex: 1; min-width: 200px; }
+        input:focus, select:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 0 2px rgba(76,175,80,0.2); }
+        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+        button:hover { background: #388E3C; }
+        button:disabled { background: #aaa; cursor: not-allowed; }
+        .btn-secondary { background: #757575; }
+        .btn-secondary:hover { background: #616161; }
+        #results { margin-top: 16px; }
+        .recipe-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px; transition: all 0.2s; background: #fff; }
+        .recipe-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); transform: translateY(-2px); }
+        .recipe-card h3 { font-size: 1.1rem; color: #2E7D32; margin-bottom: 8px; font-weight: 600; }
+        .recipe-card .meta { font-size: 0.85rem; color: #666; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+        .recipe-card .meta-item { display: flex; align-items: center; gap: 4px; }
+        .recipe-card .meta-item .icon { font-size: 1rem; }
+        .recipe-card .rating { color: #FFA000; font-weight: 600; }
+        .recipe-card .actions { margin-top: 12px; display: flex; gap: 8px; }
+        .recipe-card .actions button { padding: 8px 14px; font-size: 0.85rem; }
+        .recipe-id { font-family: monospace; font-size: 0.75rem; color: #999; background: #f5f5f5; padding: 2px 6px; border-radius: 4px; }
+        .results-header { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #eee; color: #666; font-size: 0.9rem; }
+        .results-grid { display: grid; gap: 12px; }
+        .status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 0.9rem; }
+        .status.info { background: #E3F2FD; color: #1565C0; }
+        .status.success { background: #E8F5E9; color: #2E7D32; }
+        .status.error { background: #FFEBEE; color: #C62828; }
+        .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .tabs { display: flex; gap: 0; margin-bottom: 0; }
+        .tab { padding: 12px 20px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; color: #777; transition: all 0.2s; }
+        .tab.active { color: #2E7D32; border-bottom-color: #4CAF50; }
+        .tab:hover { color: #333; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        pre { background: #f8f8f8; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; max-height: 400px; overflow-y: auto; }
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } }
+
+        /* Modal styles */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s; }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal { background: white; border-radius: 16px; max-width: 700px; width: 90%; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); transform: scale(0.9); transition: transform 0.3s; }
+        .modal-overlay.active .modal { transform: scale(1); }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1; }
+        .modal-header h2 { font-size: 1.3rem; color: #2E7D32; margin: 0; }
+        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.2s; }
+        .modal-close:hover { background: #f5f5f5; color: #333; }
+        .modal-body { padding: 24px; }
+
+        /* Recipe detail styles */
+        .recipe-detail-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+        .recipe-detail-meta .meta-badge { background: #E8F5E9; color: #2E7D32; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500; }
+        .recipe-section { margin-bottom: 24px; }
+        .recipe-section h3 { font-size: 1rem; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .recipe-section h3::before { content: ''; width: 4px; height: 16px; background: #4CAF50; border-radius: 2px; }
+        .ingredient-list { list-style: none; padding: 0; }
+        .ingredient-list li { padding: 10px 0; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .ingredient-list li:last-child { border-bottom: none; }
+        .ingredient-name { font-weight: 500; }
+        .ingredient-amount { color: #666; font-size: 0.9rem; background: #f5f5f5; padding: 4px 10px; border-radius: 12px; }
+        .step-list { list-style: none; padding: 0; counter-reset: step; }
+        .step-list li { padding: 16px 0 16px 50px; border-bottom: 1px solid #f0f0f0; position: relative; line-height: 1.6; }
+        .step-list li::before { counter-increment: step; content: counter(step); position: absolute; left: 0; top: 16px; width: 32px; height: 32px; background: #4CAF50; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.9rem; }
+        .step-list li:last-child { border-bottom: none; }
+
+        /* Shopping list styles */
+        .shopping-recipe { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+        .shopping-recipe h3 { font-size: 1rem; color: #2E7D32; margin-bottom: 12px; }
+        .shopping-ingredients { display: grid; gap: 8px; }
+        .shopping-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #f9f9f9; border-radius: 8px; }
+        .shopping-item.owned { opacity: 0.5; text-decoration: line-through; }
+        .shopping-checkbox { width: 20px; height: 20px; border: 2px solid #4CAF50; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .shopping-checkbox.checked { background: #4CAF50; }
+        .shopping-checkbox.checked::after { content: '✓'; color: white; font-size: 0.8rem; }
+        .shopping-item-name { flex: 1; }
+        .shopping-item-amount { color: #666; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🍳 Cookidoo MCP</h1>
+        <p>Search, import & manage your Thermomix recipes</p>
+    </div>
+
+    <div class="container">
+        <!-- Connection Settings -->
+        <div class="card">
+            <h2>⚙️ Connection</h2>
+            <div class="settings-grid">
+                <input type="email" id="email" placeholder="Cookidoo Email" onkeydown="if(event.key==='Enter')connect()" />
+                <input type="password" id="password" placeholder="Cookidoo Password" onkeydown="if(event.key==='Enter')connect()" />
+                <select id="country">
+                    <option value="DE">Germany</option>
+                    <option value="FR">France</option>
+                    <option value="US">United States</option>
+                    <option value="GB">United Kingdom</option>
+                    <option value="IT">Italy</option>
+                    <option value="ES">Spain</option>
+                </select>
+                <select id="language">
+                    <option value="de-DE">Deutsch</option>
+                    <option value="fr-FR">Français</option>
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="it-IT">Italiano</option>
+                    <option value="es-ES">Español</option>
+                </select>
+            </div>
+            <div style="margin-top:12px">
+                <button onclick="connect()" id="connectBtn">Connect</button>
+                <span id="connStatus" style="margin-left:12px; font-size:0.9rem; color:#777;">Not connected</span>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="card" style="padding:0;">
+            <div class="tabs" style="padding: 0 24px; border-bottom: 1px solid #eee;">
+                <div class="tab active" onclick="switchTab('search')">🔍 Search</div>
+                <div class="tab" onclick="switchTab('import')">📥 Import</div>
+                <div class="tab" onclick="switchTab('collections')">📚 Collections</div>
+                <div class="tab" onclick="switchTab('shopping')">🛒 Shopping</div>
+                <div class="tab" onclick="switchTab('raw')">🔧 Raw MCP</div>
+            </div>
+
+            <!-- Search Tab -->
+            <div class="tab-content active" id="tab-search" style="padding: 24px;">
+                <div class="form-row">
+                    <input type="text" id="searchQuery" placeholder="Search recipes... (e.g. Risotto, Pasta, Kuchen)" onkeydown="if(event.key==='Enter')searchRecipes()" />
+                    <button onclick="searchRecipes()">Search</button>
+                </div>
+                <div id="searchResults"></div>
+            </div>
+
+            <!-- Import Tab -->
+            <div class="tab-content" id="tab-import" style="padding: 24px;">
+                <p style="margin-bottom:12px; color:#666; font-size:0.9rem;">
+                    Paste a recipe URL from any supported site (Marmiton, AllRecipes, Chefkoch, etc.)
+                </p>
+                <div class="form-row">
+                    <input type="url" id="importUrl" placeholder="https://www.chefkoch.de/rezepte/..." onkeydown="if(event.key==='Enter')importRecipe()" />
+                    <input type="text" id="importName" placeholder="Custom name (optional)" style="max-width:200px;" onkeydown="if(event.key==='Enter')importRecipe()" />
+                    <button onclick="importRecipe()">Import</button>
+                </div>
+                <div id="importResults"></div>
+            </div>
+
+            <!-- Collections Tab -->
+            <div class="tab-content" id="tab-collections" style="padding: 24px;">
+                <button onclick="loadCollections()">Load My Collections</button>
+                <div id="collectionsResults" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- Shopping Tab -->
+            <div class="tab-content" id="tab-shopping" style="padding: 24px;">
+                <button onclick="loadShoppingList()">Load Shopping List</button>
+                <div id="shoppingResults" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- Raw MCP Tab -->
+            <div class="tab-content" id="tab-raw" style="padding: 24px;">
+                <p style="margin-bottom:12px; color:#666; font-size:0.9rem;">
+                    Send raw MCP tool calls directly to the server.
+                </p>
+                <div class="form-row">
+                    <select id="rawTool" style="max-width:220px;">
+                        <option value="search_recipes">search_recipes</option>
+                        <option value="get_recipe_details">get_recipe_details</option>
+                        <option value="get_managed_collections">get_managed_collections</option>
+                        <option value="add_recipe_to_collection">add_recipe_to_collection</option>
+                        <option value="get_shopping_list">get_shopping_list</option>
+                        <option value="add_recipes_to_shopping_list">add_recipes_to_shopping_list</option>
+                        <option value="get_planned_recipes">get_planned_recipes</option>
+                        <option value="import_web_recipe">import_web_recipe</option>
+                    </select>
+                    <input type="text" id="rawArgs" placeholder='{"query": "risotto"}' onkeydown="if(event.key==='Enter')sendRaw()" />
+                    <button onclick="sendRaw()">Send</button>
+                </div>
+                <pre id="rawResults">Response will appear here...</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recipe Detail Modal -->
+    <div class="modal-overlay" id="recipeModal" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Recipe Details</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8080";
+
+        function switchTab(name) {
+            document.querySelectorAll(".tab").forEach((t, i) => t.classList.remove("active"));
+            document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+            document.getElementById("tab-" + name).classList.add("active");
+            document.querySelectorAll(".tab")[["search","import","collections","shopping","raw"].indexOf(name)].classList.add("active");
+        }
+
+        async function apiCall(tool, args) {
+            const res = await fetch(API_BASE + "/mcp/call", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tool, arguments: args }),
+            });
+            return res.json();
+        }
+
+        async function connect() {
+            const btn = document.getElementById("connectBtn");
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>Connecting...';
+            try {
+                const res = await fetch(API_BASE + "/connect", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email: document.getElementById("email").value,
+                        password: document.getElementById("password").value,
+                        country: document.getElementById("country").value,
+                        language: document.getElementById("language").value,
+                    }),
+                });
+                const data = await res.json();
+                document.getElementById("connStatus").textContent = data.ok ? "✅ Connected" : "❌ " + data.error;
+                document.getElementById("connStatus").style.color = data.ok ? "#2E7D32" : "#C62828";
+            } catch (e) {
+                document.getElementById("connStatus").textContent = "❌ Server unreachable";
+                document.getElementById("connStatus").style.color = "#C62828";
+            }
+            btn.disabled = false;
+            btn.textContent = "Connect";
+        }
+
+        function formatTime(seconds) {
+            if (!seconds) return null;
+            const mins = Math.round(seconds / 60);
+            if (mins < 60) return mins + ' min';
+            const hrs = Math.floor(mins / 60);
+            const remainMins = mins % 60;
+            return remainMins > 0 ? hrs + 'h ' + remainMins + 'min' : hrs + 'h';
+        }
+
+        async function searchRecipes() {
+            const q = document.getElementById("searchQuery").value;
+            if (!q) return;
+            const el = document.getElementById("searchResults");
+            el.textContent = '';
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'status info';
+            loadingDiv.innerHTML = '<span class="loading"></span>Searching...';
+            el.appendChild(loadingDiv);
+            try {
+                const data = await apiCall("search_recipes", { query: q });
+                const recipes = data.results?.recipes || data.results || [];
+                const totalHits = data.results?.totalHits || recipes.length;
+                el.textContent = '';
+
+                if (Array.isArray(recipes) && recipes.length > 0) {
+                    const header = document.createElement('div');
+                    header.className = 'results-header';
+                    header.textContent = 'Found ' + totalHits + ' recipes for "' + q + '"';
+                    el.appendChild(header);
+
+                    const grid = document.createElement('div');
+                    grid.className = 'results-grid';
+
+                    recipes.forEach(r => {
+                        const card = document.createElement('div');
+                        card.className = 'recipe-card';
+
+                        const title = document.createElement('h3');
+                        title.textContent = r.title || r.name || 'Recipe';
+                        card.appendChild(title);
+
+                        const meta = document.createElement('div');
+                        meta.className = 'meta';
+
+                        const idSpan = document.createElement('span');
+                        idSpan.className = 'recipe-id';
+                        idSpan.textContent = r.id || '';
+                        meta.appendChild(idSpan);
+
+                        const time = formatTime(r.totalTime || r.total_time);
+                        if (time) {
+                            const timeSpan = document.createElement('span');
+                            timeSpan.className = 'meta-item';
+                            timeSpan.textContent = '⏱️ ' + time;
+                            meta.appendChild(timeSpan);
+                        }
+
+                        if (r.rating) {
+                            const ratingSpan = document.createElement('span');
+                            ratingSpan.className = 'meta-item rating';
+                            ratingSpan.textContent = '⭐ ' + r.rating.toFixed(1);
+                            meta.appendChild(ratingSpan);
+                        }
+
+                        card.appendChild(meta);
+
+                        const actions = document.createElement('div');
+                        actions.className = 'actions';
+
+                        const detailBtn = document.createElement('button');
+                        detailBtn.textContent = '📖 Details';
+                        detailBtn.onclick = () => viewRecipe(r.id);
+                        actions.appendChild(detailBtn);
+
+                        const shopBtn = document.createElement('button');
+                        shopBtn.className = 'btn-secondary';
+                        shopBtn.textContent = '🛒 Add to Shopping';
+                        shopBtn.onclick = () => addToShopping(r.id);
+                        actions.appendChild(shopBtn);
+
+                        card.appendChild(actions);
+                        grid.appendChild(card);
+                    });
+
+                    el.appendChild(grid);
+                } else if (recipes.length === 0) {
+                    const noResults = document.createElement('div');
+                    noResults.className = 'status info';
+                    noResults.textContent = 'No recipes found for "' + q + '"';
+                    el.appendChild(noResults);
+                } else {
+                    const pre = document.createElement('pre');
+                    pre.textContent = JSON.stringify(data, null, 2);
+                    el.appendChild(pre);
+                }
+            } catch (e) {
+                el.textContent = '';
+                const errDiv = document.createElement('div');
+                errDiv.className = 'status error';
+                errDiv.textContent = 'Error: ' + e.message;
+                el.appendChild(errDiv);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('recipeModal').classList.remove('active');
+        }
+
+        async function viewRecipe(id) {
+            const modal = document.getElementById('recipeModal');
+            const modalBody = document.getElementById('modalBody');
+            const modalTitle = document.getElementById('modalTitle');
+
+            modalTitle.textContent = 'Loading...';
+            modalBody.innerHTML = '<div class="status info"><span class="loading"></span>Loading recipe details...</div>';
+            modal.classList.add('active');
+
+            try {
+                const data = await apiCall("get_recipe_details", { recipe_id: id });
+                const recipe = data.results || data;
+
+                modalTitle.textContent = recipe.name || recipe.title || 'Recipe';
+
+                let html = '<div class="recipe-detail-meta">';
+                if (recipe.total_time || recipe.totalTime) {
+                    const time = formatTime(recipe.total_time || recipe.totalTime);
+                    if (time) html += `<span class="meta-badge">⏱️ ${time}</span>`;
+                }
+                if (recipe.difficulty) {
+                    html += `<span class="meta-badge">📊 ${recipe.difficulty}</span>`;
+                }
+                if (recipe.servings || recipe.serving_size) {
+                    html += `<span class="meta-badge">👥 ${recipe.servings || recipe.serving_size} servings</span>`;
+                }
+                if (recipe.rating) {
+                    html += `<span class="meta-badge">⭐ ${recipe.rating.toFixed(1)}</span>`;
+                }
+                html += '</div>';
+
+                // Description
+                if (recipe.description) {
+                    html += `<div class="recipe-section"><h3>Description</h3><p>${recipe.description}</p></div>`;
+                }
+
+                // Ingredients
+                const ingredients = recipe.ingredients || recipe.ingredient_groups || [];
+                if (ingredients.length > 0) {
+                    html += '<div class="recipe-section"><h3>Ingredients</h3><ul class="ingredient-list">';
+                    ingredients.forEach(ing => {
+                        if (ing.ingredients) {
+                            // ingredient group
+                            ing.ingredients.forEach(i => {
+                                const name = i.name || i.ingredient || i;
+                                const amount = i.amount || i.quantity || '';
+                                const unit = i.unit || '';
+                                html += `<li><span class="ingredient-name">${name}</span><span class="ingredient-amount">${amount} ${unit}</span></li>`;
+                            });
+                        } else {
+                            const name = ing.name || ing.ingredient || ing;
+                            const amount = ing.amount || ing.quantity || '';
+                            const unit = ing.unit || '';
+                            html += `<li><span class="ingredient-name">${name}</span><span class="ingredient-amount">${amount} ${unit}</span></li>`;
+                        }
+                    });
+                    html += '</ul></div>';
+                }
+
+                // Steps
+                const steps = recipe.steps || recipe.directions || [];
+                if (steps.length > 0) {
+                    html += '<div class="recipe-section"><h3>Instructions</h3><ol class="step-list">';
+                    steps.forEach(step => {
+                        const text = step.description || step.text || step.instruction || step;
+                        html += `<li>${text}</li>`;
+                    });
+                    html += '</ol></div>';
+                }
+
+                // Fallback to JSON if no structured data
+                if (!ingredients.length && !steps.length) {
+                    html += `<pre>${JSON.stringify(recipe, null, 2)}</pre>`;
+                }
+
+                modalBody.innerHTML = html;
+            } catch (e) {
+                modalBody.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function addToShopping(id) {
+            await apiCall("add_recipes_to_shopping_list", { recipe_ids: [id] });
+            // Show toast instead of alert
+            const toast = document.createElement('div');
+            toast.className = 'status success';
+            toast.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2000;animation:fadeIn 0.3s;';
+            toast.textContent = '✅ Added to shopping list!';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        async function importRecipe() {
+            const url = document.getElementById("importUrl").value;
+            if (!url) return;
+            const el = document.getElementById("importResults");
+            el.innerHTML = '<div class="status info"><span class="loading"></span>Importing...</div>';
+            const args = { url };
+            const name = document.getElementById("importName").value;
+            if (name) args.name = name;
+            try {
+                const data = await apiCall("import_web_recipe", args);
+                el.innerHTML = '<div class="status success">✅ Recipe imported!</div><pre>' + JSON.stringify(data, null, 2) + "</pre>";
+            } catch (e) {
+                el.innerHTML = '<div class="status error">Error: ' + e.message + "</div>";
+            }
+        }
+
+        async function loadCollections() {
+            const el = document.getElementById("collectionsResults");
+            el.innerHTML = '<div class="status info"><span class="loading"></span>Loading...</div>';
+
+            try {
+                const data = await apiCall("get_managed_collections", {});
+                const collections = data.results || data || [];
+
+                if (!collections || (Array.isArray(collections) && collections.length === 0)) {
+                    el.innerHTML = '<div class="status info">📚 No collections found</div>';
+                    return;
+                }
+
+                let html = '<div class="results-header">Your Collections</div><div class="results-grid">';
+
+                if (Array.isArray(collections)) {
+                    collections.forEach(col => {
+                        html += '<div class="recipe-card">';
+                        html += `<h3>📁 ${col.name || col.title || 'Collection'}</h3>`;
+                        html += '<div class="meta">';
+                        if (col.id) html += `<span class="recipe-id">${col.id}</span>`;
+                        if (col.recipe_count !== undefined || col.recipes) {
+                            const count = col.recipe_count || (col.recipes ? col.recipes.length : 0);
+                            html += `<span class="meta-item">🍳 ${count} recipes</span>`;
+                        }
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                } else {
+                    html += `<pre>${JSON.stringify(collections, null, 2)}</pre>`;
+                }
+
+                html += '</div>';
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function loadShoppingList() {
+            const el = document.getElementById("shoppingResults");
+            el.innerHTML = '<div class="status info"><span class="loading"></span>Loading...</div>';
+
+            try {
+                const data = await apiCall("get_shopping_list", {});
+                const items = data.results || data || [];
+
+                if (!items || (Array.isArray(items) && items.length === 0)) {
+                    el.innerHTML = '<div class="status info">🛒 Your shopping list is empty</div>';
+                    return;
+                }
+
+                // Group items by owned status
+                const toBuy = [];
+                const owned = [];
+
+                if (Array.isArray(items)) {
+                    items.forEach(item => {
+                        if (item.is_owned || item.owned) {
+                            owned.push(item);
+                        } else {
+                            toBuy.push(item);
+                        }
+                    });
+                }
+
+                let html = `<div class="results-header">🛒 Shopping List - ${toBuy.length} items to buy</div>`;
+                html += '<div class="shopping-recipe">';
+
+                if (toBuy.length > 0) {
+                    html += '<h3>Items to Buy</h3>';
+                    html += '<div class="shopping-ingredients">';
+                    toBuy.forEach(item => {
+                        const name = item.name || item.ingredient || item;
+                        const amount = item.description || item.amount || item.quantity || '';
+                        html += '<div class="shopping-item">';
+                        html += '<div class="shopping-checkbox"></div>';
+                        html += `<span class="shopping-item-name">${name}</span>`;
+                        if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
+                if (owned.length > 0) {
+                    html += '<h3 style="margin-top:20px; opacity:0.6;">Already Have</h3>';
+                    html += '<div class="shopping-ingredients">';
+                    owned.forEach(item => {
+                        const name = item.name || item.ingredient || item;
+                        const amount = item.description || item.amount || item.quantity || '';
+                        html += '<div class="shopping-item owned">';
+                        html += '<div class="shopping-checkbox checked"></div>';
+                        html += `<span class="shopping-item-name">${name}</span>`;
+                        if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
+                html += '</div>';
+
+                // Debug: show raw data if structure is unexpected
+                if (!Array.isArray(items)) {
+                    html += `<details style="margin-top:16px;"><summary>Raw data</summary><pre>${JSON.stringify(items, null, 2)}</pre></details>`;
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function sendRaw() {
+            const tool = document.getElementById("rawTool").value;
+            let args = {};
+            try { args = JSON.parse(document.getElementById("rawArgs").value || "{}"); } catch {}
+            document.getElementById("rawResults").textContent = "Loading...";
+            const data = await apiCall(tool, args);
+            document.getElementById("rawResults").textContent = JSON.stringify(data, null, 2);
+        }
+    </script>
+</body>
+</html>
