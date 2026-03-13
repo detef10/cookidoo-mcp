@@ -548,11 +548,13 @@
                     html += '<h3>Items to Buy</h3>';
                     html += '<div class="shopping-ingredients">';
                     toBuy.forEach(item => {
-                        const id = item.id || '';
+                        // Use 'ids' array (aggregated) or fall back to single 'id'
+                        const ids = item.ids || (item.id ? [item.id] : []);
+                        const idsJson = JSON.stringify(ids).replace(/"/g, '&quot;');
                         const name = item.name || item.ingredient || item;
                         const amount = item.description || item.amount || item.quantity || '';
-                        html += `<div class="shopping-item" data-id="${id}">`;
-                        html += `<div class="shopping-checkbox" onclick="tickItem('${id}')"></div>`;
+                        html += `<div class="shopping-item" data-ids="${idsJson}">`;
+                        html += `<div class="shopping-checkbox" onclick="tickItems(${JSON.stringify(ids)})"></div>`;
                         html += `<span class="shopping-item-name">${name}</span>`;
                         if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
                         html += '</div>';
@@ -564,11 +566,12 @@
                     html += '<h3 style="margin-top:20px; opacity:0.6;">Already Have</h3>';
                     html += '<div class="shopping-ingredients">';
                     owned.forEach(item => {
-                        const id = item.id || '';
+                        const ids = item.ids || (item.id ? [item.id] : []);
+                        const idsJson = JSON.stringify(ids).replace(/"/g, '&quot;');
                         const name = item.name || item.ingredient || item;
                         const amount = item.description || item.amount || item.quantity || '';
-                        html += `<div class="shopping-item owned" data-id="${id}">`;
-                        html += `<div class="shopping-checkbox checked" onclick="untickItem('${id}')"></div>`;
+                        html += `<div class="shopping-item owned" data-ids="${idsJson}">`;
+                        html += `<div class="shopping-checkbox checked" onclick="untickItems(${JSON.stringify(ids)})"></div>`;
                         html += `<span class="shopping-item-name">${name}</span>`;
                         if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
                         html += '</div>';
@@ -589,20 +592,20 @@
             }
         }
 
-        async function tickItem(id) {
-            if (!id) return;
+        async function tickItems(ids) {
+            if (!ids || !ids.length) return;
             try {
-                await apiCall("tick_off_items", { item_ids: [id] });
+                await apiCall("tick_off_items", { item_ids: ids });
                 await loadShoppingList(); // Refresh the list
             } catch (e) {
                 alert('Error: ' + e.message);
             }
         }
 
-        async function untickItem(id) {
-            if (!id) return;
+        async function untickItems(ids) {
+            if (!ids || !ids.length) return;
             try {
-                await apiCall("untick_items", { item_ids: [id] });
+                await apiCall("untick_items", { item_ids: ids });
                 await loadShoppingList(); // Refresh the list
             } catch (e) {
                 alert('Error: ' + e.message);

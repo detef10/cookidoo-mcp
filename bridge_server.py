@@ -159,11 +159,12 @@ async def get_shopping_list(args):
     if not isinstance(items, list):
         return items
 
-    # Aggregate items by name and unit
+    # Aggregate items by name and unit, keeping ALL IDs for ticking off
     aggregated = {}
     for item in items:
         name = item.get('name', '')
         is_owned = item.get('is_owned', False)
+        item_id = item.get('id', '')
         amount, unit, orig_desc = parse_amount(item.get('description', ''))
 
         # Key by name + unit + owned status (keep owned/not-owned separate)
@@ -175,17 +176,22 @@ async def get_shopping_list(args):
             if amount is not None and existing.get('_amount') is not None:
                 existing['_amount'] += amount
                 existing['description'] = f"{existing['_amount']:g} {unit}".strip()
-            # Keep first item's other properties
+            # Collect all IDs for this aggregated item
+            if item_id:
+                existing['_all_ids'].append(item_id)
         else:
             aggregated[key] = {
                 **item,
                 '_amount': amount,  # Track numeric amount for summing
+                '_all_ids': [item_id] if item_id else [],  # Track all IDs
             }
 
-    # Remove internal _amount field and return
+    # Remove internal fields and set 'ids' array for UI
     result_items = []
     for item in aggregated.values():
         item.pop('_amount', None)
+        all_ids = item.pop('_all_ids', [])
+        item['ids'] = all_ids  # Array of all IDs for this aggregated item
         result_items.append(item)
 
     return result_items
