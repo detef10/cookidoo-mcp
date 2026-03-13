@@ -550,11 +550,11 @@
                     toBuy.forEach(item => {
                         // Use 'ids' array (aggregated) or fall back to single 'id'
                         const ids = item.ids || (item.id ? [item.id] : []);
-                        const idsJson = JSON.stringify(ids).replace(/"/g, '&quot;');
+                        const idsAttr = encodeURIComponent(JSON.stringify(ids));
                         const name = item.name || item.ingredient || item;
                         const amount = item.description || item.amount || item.quantity || '';
-                        html += `<div class="shopping-item" data-ids="${idsJson}">`;
-                        html += `<div class="shopping-checkbox" onclick="tickItems(${JSON.stringify(ids)})"></div>`;
+                        html += `<div class="shopping-item" data-ids="${idsAttr}">`;
+                        html += `<div class="shopping-checkbox" onclick="tickItemsFromEl(this.parentElement)"></div>`;
                         html += `<span class="shopping-item-name">${name}</span>`;
                         if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
                         html += '</div>';
@@ -567,11 +567,11 @@
                     html += '<div class="shopping-ingredients">';
                     owned.forEach(item => {
                         const ids = item.ids || (item.id ? [item.id] : []);
-                        const idsJson = JSON.stringify(ids).replace(/"/g, '&quot;');
+                        const idsAttr = encodeURIComponent(JSON.stringify(ids));
                         const name = item.name || item.ingredient || item;
                         const amount = item.description || item.amount || item.quantity || '';
-                        html += `<div class="shopping-item owned" data-ids="${idsJson}">`;
-                        html += `<div class="shopping-checkbox checked" onclick="untickItems(${JSON.stringify(ids)})"></div>`;
+                        html += `<div class="shopping-item owned" data-ids="${idsAttr}">`;
+                        html += `<div class="shopping-checkbox checked" onclick="untickItemsFromEl(this.parentElement)"></div>`;
                         html += `<span class="shopping-item-name">${name}</span>`;
                         if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
                         html += '</div>';
@@ -592,7 +592,10 @@
             }
         }
 
-        async function tickItems(ids) {
+        async function tickItemsFromEl(el) {
+            const idsAttr = el.getAttribute('data-ids');
+            if (!idsAttr) return;
+            const ids = JSON.parse(decodeURIComponent(idsAttr));
             if (!ids || !ids.length) return;
             try {
                 await apiCall("tick_off_items", { item_ids: ids });
@@ -602,7 +605,10 @@
             }
         }
 
-        async function untickItems(ids) {
+        async function untickItemsFromEl(el) {
+            const idsAttr = el.getAttribute('data-ids');
+            if (!idsAttr) return;
+            const ids = JSON.parse(decodeURIComponent(idsAttr));
             if (!ids || !ids.length) return;
             try {
                 await apiCall("untick_items", { item_ids: ids });
