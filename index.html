@@ -84,9 +84,11 @@
         .shopping-ingredients { display: grid; gap: 8px; }
         .shopping-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #f9f9f9; border-radius: 8px; }
         .shopping-item.owned { opacity: 0.5; text-decoration: line-through; }
-        .shopping-checkbox { width: 20px; height: 20px; border: 2px solid #4CAF50; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .shopping-checkbox { width: 20px; height: 20px; border: 2px solid #4CAF50; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .shopping-checkbox:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(76,175,80,0.3); }
         .shopping-checkbox.checked { background: #4CAF50; }
         .shopping-checkbox.checked::after { content: '✓'; color: white; font-size: 0.8rem; }
+        .shopping-item { transition: opacity 0.3s, transform 0.3s; }
         .shopping-item-name { flex: 1; }
         .shopping-item-amount { color: #666; font-size: 0.85rem; }
     </style>
@@ -597,10 +599,29 @@
             if (!idsAttr) return;
             const ids = JSON.parse(decodeURIComponent(idsAttr));
             if (!ids || !ids.length) return;
+
+            // Optimistic UI update - move to "owned" immediately
+            const checkbox = el.querySelector('.shopping-checkbox');
+            el.classList.add('owned');
+            checkbox.classList.add('checked');
+            checkbox.setAttribute('onclick', 'untickItemsFromEl(this.parentElement)');
+
+            // Animate and move to "Already Have" section
+            el.style.transition = 'opacity 0.3s, transform 0.3s';
+            el.style.opacity = '0.5';
+            el.style.transform = 'translateX(10px)';
+
             try {
                 await apiCall("tick_off_items", { item_ids: ids });
-                await loadShoppingList(); // Refresh the list
+                // Update header count
+                updateShoppingCount();
             } catch (e) {
+                // Revert on error
+                el.classList.remove('owned');
+                checkbox.classList.remove('checked');
+                checkbox.setAttribute('onclick', 'tickItemsFromEl(this.parentElement)');
+                el.style.opacity = '1';
+                el.style.transform = 'none';
                 alert('Error: ' + e.message);
             }
         }
@@ -610,11 +631,35 @@
             if (!idsAttr) return;
             const ids = JSON.parse(decodeURIComponent(idsAttr));
             if (!ids || !ids.length) return;
+
+            // Optimistic UI update - move to "to buy" immediately
+            const checkbox = el.querySelector('.shopping-checkbox');
+            el.classList.remove('owned');
+            checkbox.classList.remove('checked');
+            checkbox.setAttribute('onclick', 'tickItemsFromEl(this.parentElement)');
+
+            // Animate
+            el.style.transition = 'opacity 0.3s, transform 0.3s';
+            el.style.opacity = '1';
+            el.style.transform = 'none';
+
             try {
                 await apiCall("untick_items", { item_ids: ids });
-                await loadShoppingList(); // Refresh the list
+                updateShoppingCount();
             } catch (e) {
+                // Revert on error
+                el.classList.add('owned');
+                checkbox.classList.add('checked');
+                checkbox.setAttribute('onclick', 'untickItemsFromEl(this.parentElement)');
                 alert('Error: ' + e.message);
+            }
+        }
+
+        function updateShoppingCount() {
+            const toBuyCount = document.querySelectorAll('.shopping-item:not(.owned)').length;
+            const header = document.querySelector('.results-header span');
+            if (header) {
+                header.textContent = `🛒 Shopping List - ${toBuyCount} items to buy`;
             }
         }
 
