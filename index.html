@@ -184,6 +184,9 @@
                         <option value="add_recipe_to_collection">add_recipe_to_collection</option>
                         <option value="get_shopping_list">get_shopping_list</option>
                         <option value="add_recipes_to_shopping_list">add_recipes_to_shopping_list</option>
+                        <option value="tick_off_items">tick_off_items</option>
+                        <option value="untick_items">untick_items</option>
+                        <option value="clear_shopping_list">clear_shopping_list</option>
                         <option value="get_planned_recipes">get_planned_recipes</option>
                         <option value="import_web_recipe">import_web_recipe</option>
                     </select>
@@ -535,17 +538,21 @@
                     });
                 }
 
-                let html = `<div class="results-header">🛒 Shopping List - ${toBuy.length} items to buy</div>`;
+                let html = `<div class="results-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>🛒 Shopping List - ${toBuy.length} items to buy</span>
+                    <button class="btn-secondary" onclick="clearShoppingList()" style="padding:6px 12px; font-size:0.8rem;">🗑️ Clear All</button>
+                </div>`;
                 html += '<div class="shopping-recipe">';
 
                 if (toBuy.length > 0) {
                     html += '<h3>Items to Buy</h3>';
                     html += '<div class="shopping-ingredients">';
                     toBuy.forEach(item => {
+                        const id = item.id || '';
                         const name = item.name || item.ingredient || item;
                         const amount = item.description || item.amount || item.quantity || '';
-                        html += '<div class="shopping-item">';
-                        html += '<div class="shopping-checkbox"></div>';
+                        html += `<div class="shopping-item" data-id="${id}">`;
+                        html += `<div class="shopping-checkbox" onclick="tickItem('${id}')"></div>`;
                         html += `<span class="shopping-item-name">${name}</span>`;
                         if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
                         html += '</div>';
@@ -557,10 +564,11 @@
                     html += '<h3 style="margin-top:20px; opacity:0.6;">Already Have</h3>';
                     html += '<div class="shopping-ingredients">';
                     owned.forEach(item => {
+                        const id = item.id || '';
                         const name = item.name || item.ingredient || item;
                         const amount = item.description || item.amount || item.quantity || '';
-                        html += '<div class="shopping-item owned">';
-                        html += '<div class="shopping-checkbox checked"></div>';
+                        html += `<div class="shopping-item owned" data-id="${id}">`;
+                        html += `<div class="shopping-checkbox checked" onclick="untickItem('${id}')"></div>`;
                         html += `<span class="shopping-item-name">${name}</span>`;
                         if (amount) html += `<span class="shopping-item-amount">${amount}</span>`;
                         html += '</div>';
@@ -578,6 +586,36 @@
                 el.innerHTML = html;
             } catch (e) {
                 el.innerHTML = `<div class="status error">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function tickItem(id) {
+            if (!id) return;
+            try {
+                await apiCall("tick_off_items", { item_ids: [id] });
+                await loadShoppingList(); // Refresh the list
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function untickItem(id) {
+            if (!id) return;
+            try {
+                await apiCall("untick_items", { item_ids: [id] });
+                await loadShoppingList(); // Refresh the list
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function clearShoppingList() {
+            if (!confirm('Clear entire shopping list?')) return;
+            try {
+                await apiCall("clear_shopping_list", {});
+                await loadShoppingList(); // Refresh the list
+            } catch (e) {
+                alert('Error: ' + e.message);
             }
         }
 

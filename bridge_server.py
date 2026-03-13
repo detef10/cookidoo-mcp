@@ -9,6 +9,7 @@ import re
 import aiohttp
 from aiohttp import web
 from cookidoo_api import Cookidoo, CookidooConfig, CookidooLocalizationConfig
+from cookidoo_api.types import CookidooIngredientItem
 
 # Global session
 cd_session: aiohttp.ClientSession | None = None
@@ -192,6 +193,59 @@ async def get_shopping_list(args):
 @tool("add_recipes_to_shopping_list")
 async def add_recipes_to_shopping_list(args):
     return await cd.add_ingredient_items_for_recipes(args["recipe_ids"])
+
+@tool("tick_off_items")
+async def tick_off_items(args):
+    """Mark shopping list items as owned/bought (ticked off)."""
+    item_ids = args.get("item_ids", [])
+    if isinstance(item_ids, str):
+        item_ids = [item_ids]
+
+    # Get current items to find the ones to update
+    all_items = await cd.get_ingredient_items()
+    items_to_update = []
+    for item in all_items:
+        if item.id in item_ids:
+            items_to_update.append(CookidooIngredientItem(
+                id=item.id,
+                name=item.name,
+                description=item.description,
+                is_owned=True
+            ))
+
+    if items_to_update:
+        result = await cd.edit_ingredient_items_ownership(items_to_update)
+        return {"updated": len(result), "items": to_dict(result)}
+    return {"updated": 0, "items": []}
+
+@tool("untick_items")
+async def untick_items(args):
+    """Mark shopping list items as not owned (unticked)."""
+    item_ids = args.get("item_ids", [])
+    if isinstance(item_ids, str):
+        item_ids = [item_ids]
+
+    all_items = await cd.get_ingredient_items()
+    items_to_update = []
+    for item in all_items:
+        if item.id in item_ids:
+            items_to_update.append(CookidooIngredientItem(
+                id=item.id,
+                name=item.name,
+                description=item.description,
+                is_owned=False
+            ))
+
+    if items_to_update:
+        result = await cd.edit_ingredient_items_ownership(items_to_update)
+        return {"updated": len(result), "items": to_dict(result)}
+    return {"updated": 0, "items": []}
+
+@tool("clear_shopping_list")
+async def clear_shopping_list(args):
+    """Clear the entire shopping list."""
+    await cd.clear_shopping_list()
+    return {"cleared": True}
 
 @tool("get_planned_recipes")
 async def get_planned_recipes(args):

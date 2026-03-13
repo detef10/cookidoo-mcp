@@ -13,6 +13,7 @@ from mcp.types import Tool, TextContent
 from mcp.server.stdio import run_server
 
 from cookidoo_api import Cookidoo, CookidooConfig, CookidooLocalizationConfig
+from cookidoo_api.types import CookidooIngredientItem
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,41 @@ async def list_tools() -> list[Tool]:
                 "required": ["url"],
             },
         ),
+        Tool(
+            name="tick_off_items",
+            description="Mark shopping list items as bought/owned (tick them off). Items remain on the list but are marked as acquired.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of item IDs to tick off",
+                    },
+                },
+                "required": ["item_ids"],
+            },
+        ),
+        Tool(
+            name="untick_items",
+            description="Mark shopping list items as not bought/not owned (untick them).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of item IDs to untick",
+                    },
+                },
+                "required": ["item_ids"],
+            },
+        ),
+        Tool(
+            name="clear_shopping_list",
+            description="Clear the entire shopping list (remove all items).",
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -201,6 +237,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 name=arguments.get("name"),
             )
             return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+
+        elif name == "tick_off_items":
+            item_ids = arguments["item_ids"]
+            all_items = await cd.get_ingredient_items()
+            items_to_update = [
+                CookidooIngredientItem(id=item.id, name=item.name, description=item.description, is_owned=True)
+                for item in all_items if item.id in item_ids
+            ]
+            if items_to_update:
+                result = await cd.edit_ingredient_items_ownership(items_to_update)
+                return [TextContent(type="text", text=json.dumps({"updated": len(result), "items": [vars(i) for i in result]}, default=str, indent=2))]
+            return [TextContent(type="text", text=json.dumps({"updated": 0, "items": []}))]
+
+        elif name == "untick_items":
+            item_ids = arguments["item_ids"]
+            all_items = await cd.get_ingredient_items()
+            items_to_update = [
+                CookidooIngredientItem(id=item.id, name=item.name, description=item.description, is_owned=False)
+                for item in all_items if item.id in item_ids
+            ]
+            if items_to_update:
+                result = await cd.edit_ingredient_items_ownership(items_to_update)
+                return [TextContent(type="text", text=json.dumps({"updated": len(result), "items": [vars(i) for i in result]}, default=str, indent=2))]
+            return [TextContent(type="text", text=json.dumps({"updated": 0, "items": []}))]
+
+        elif name == "clear_shopping_list":
+            await cd.clear_shopping_list()
+            return [TextContent(type="text", text=json.dumps({"cleared": True}))]
 
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
