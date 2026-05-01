@@ -4,6 +4,7 @@
 import asyncio
 import json
 import os
+import time
 import logging
 from typing import Any
 
@@ -11,13 +12,24 @@ import aiohttp
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.stdio import run_server
+from opentelemetry import trace
+from opentelemetry.trace import SpanStatusCode
 
 from cookidoo_api import Cookidoo, CookidooConfig, CookidooLocalizationConfig
 from cookidoo_api.types import CookidooIngredientItem
+from otel_setup import setup_tracing
 
 logger = logging.getLogger(__name__)
 
-# --- Cookidoo Session Management ---
+# ---------------------------------------------------------------------------
+# OpenTelemetry
+# ---------------------------------------------------------------------------
+
+tracer = setup_tracing()
+
+# ---------------------------------------------------------------------------
+# Cookidoo Session Management
+# ---------------------------------------------------------------------------
 
 class CookidooSession:
     """Manages a persistent Cookidoo API session."""
@@ -58,7 +70,9 @@ class CookidooSession:
 
 cookidoo_session = CookidooSession()
 
-# --- MCP Server Definition ---
+# ---------------------------------------------------------------------------
+# MCP Server Definition
+# ---------------------------------------------------------------------------
 
 app = Server("cookidoo-mcp")
 
@@ -152,7 +166,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="tick_off_items",
-            description="Mark shopping list items as bought/owned (tick them off). Items remain on the list but are marked as acquired.",
+            description="Mark shopping list items as bought/owned (tick them off).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -188,94 +202,157 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# Tool execution (with per-tool span attributes)
+# ---------------------------------------------------------------------------
+
+async def _execute_tool(name: str, arguments: dict[str, Any], cd: Cookidoo) -> list[TextContent]:
+    """Run the requested tool and enrich the current span with tool-specific attributes."""
+    span = trace.get_current_span()
+
+    if name == "search_recipes":
+        results = await cd.search_recipes(
+            arguments["query"],
+            page=arguments.get("page", 0),
+        )
+        span.set_attribute("cookidoo.query", arguments["query"])
+        span.set_attribute("cookidoo.page", arguments.get("page", 0))
+        span.set_attribute("cookidoo.result_count", len(results) if results else 0)
+        return [TextContent(type="text", text=json.dumps(results, default=str, indent=2))]
+
+    elif name == "get_recipe_details":
+        recipe = await cd.get_recipe_details(arguments["recipe_id"])
+        span.set_attribute("cookidoo.recipe_id", arguments["recipe_id"])
+        if isinstance(recipe, dict):
+            span.set_attribute("cookidoo.recipe_name", str(recipe.get("name", "")))
+        return [TextContent(type="text", text=json.dumps(recipe, default=str, indent=2))]
+
+    elif name == "get_managed_collections":
+        collections = await cd.get_managed_collections()
+        span.set_attribute("cookidoo.collection_count", len(collections) if collections else 0)
+        return [TextContent(type="text", text=json.dumps(collections, default=str, indent=2))]
+
+    elif name == "add_recipe_to_collection":
+        result = await cd.add_recipes_to_collection(
+            arguments["collection_id"],
+            [arguments["recipe_id"]],
+        )
+        span.set_attribute("cookidoo.recipe_id", arguments["recipe_id"])
+        span.set_attribute("cookidoo.collection_id", arguments["collection_id"])
+        return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+
+    elif name == "get_shopping_list":
+        items = await cd.get_shopping_list_recipes()
+        span.set_attribute("cookidoo.item_count", len(items) if items else 0)
+        return [TextContent(type="text", text=json.dumps(items, default=str, indent=2))]
+
+    elif name == "add_recipes_to_shopping_list":
+        recipe_ids = arguments["recipe_ids"]
+        result = await cd.add_shopping_list_recipes(recipe_ids)
+        span.set_attribute("cookidoo.recipe_count", len(recipe_ids))
+        span.set_attribute("cookidoo.recipe_ids", ", ".join(recipe_ids))
+        return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+
+    elif name == "get_planned_recipes":
+        planned = await cd.get_planned_recipes(
+            arguments["start_date"],
+            arguments["end_date"],
+        )
+        span.set_attribute("cookidoo.start_date", arguments["start_date"])
+        span.set_attribute("cookidoo.end_date", arguments["end_date"])
+        span.set_attribute("cookidoo.result_count", len(planned) if planned else 0)
+        return [TextContent(type="text", text=json.dumps(planned, default=str, indent=2))]
+
+    elif name == "import_web_recipe":
+        result = await cd.add_custom_recipe(
+            url=arguments["url"],
+            name=arguments.get("name"),
+        )
+        span.set_attribute("cookidoo.import_url", arguments["url"])
+        if arguments.get("name"):
+            span.set_attribute("cookidoo.recipe_name", arguments["name"])
+        return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+
+    elif name == "tick_off_items":
+        item_ids = arguments["item_ids"]
+        all_items = await cd.get_ingredient_items()
+        items_to_update = [
+            CookidooIngredientItem(id=item.id, name=item.name, description=item.description, is_owned=True)
+            for item in all_items if item.id in item_ids
+        ]
+        span.set_attribute("cookidoo.requested_count", len(item_ids))
+        span.set_attribute("cookidoo.updated_count", len(items_to_update))
+        if items_to_update:
+            result = await cd.edit_ingredient_items_ownership(items_to_update)
+            return [TextContent(type="text", text=json.dumps({"updated": len(result), "items": [vars(i) for i in result]}, default=str, indent=2))]
+        return [TextContent(type="text", text=json.dumps({"updated": 0, "items": []}))]
+
+    elif name == "untick_items":
+        item_ids = arguments["item_ids"]
+        all_items = await cd.get_ingredient_items()
+        items_to_update = [
+            CookidooIngredientItem(id=item.id, name=item.name, description=item.description, is_owned=False)
+            for item in all_items if item.id in item_ids
+        ]
+        span.set_attribute("cookidoo.requested_count", len(item_ids))
+        span.set_attribute("cookidoo.updated_count", len(items_to_update))
+        if items_to_update:
+            result = await cd.edit_ingredient_items_ownership(items_to_update)
+            return [TextContent(type="text", text=json.dumps({"updated": len(result), "items": [vars(i) for i in result]}, default=str, indent=2))]
+        return [TextContent(type="text", text=json.dumps({"updated": 0, "items": []}))]
+
+    elif name == "clear_shopping_list":
+        await cd.clear_shopping_list()
+        return [TextContent(type="text", text=json.dumps({"cleared": True}))]
+
+    else:
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+
+# ---------------------------------------------------------------------------
+# call_tool — wraps every tool call in a span
+# ---------------------------------------------------------------------------
+
 @app.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    try:
-        await cookidoo_session.ensure_connected()
-        cd = cookidoo_session.cookidoo
+    start = time.time()
 
-        if name == "search_recipes":
-            results = await cd.search_recipes(
-                arguments["query"],
-                page=arguments.get("page", 0),
-            )
-            return [TextContent(type="text", text=json.dumps(results, default=str, indent=2))]
+    with tracer.start_as_current_span(
+        f"mcp.tool.{name}",
+        attributes={
+            "mcp.tool.name": name,
+            "mcp.server": "cookidoo-mcp",
+        },
+    ) as span:
+        try:
+            await cookidoo_session.ensure_connected()
+            cd = cookidoo_session.cookidoo
 
-        elif name == "get_recipe_details":
-            recipe = await cd.get_recipe_details(arguments["recipe_id"])
-            return [TextContent(type="text", text=json.dumps(recipe, default=str, indent=2))]
+            result = await _execute_tool(name, arguments, cd)
 
-        elif name == "get_managed_collections":
-            collections = await cd.get_managed_collections()
-            return [TextContent(type="text", text=json.dumps(collections, default=str, indent=2))]
+            duration_ms = int((time.time() - start) * 1000)
+            span.set_attribute("mcp.tool.duration_ms", duration_ms)
+            span.set_attribute("mcp.tool.success", True)
+            return result
 
-        elif name == "add_recipe_to_collection":
-            result = await cd.add_recipes_to_collection(
-                arguments["collection_id"],
-                [arguments["recipe_id"]],
-            )
-            return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+        except Exception as e:
+            duration_ms = int((time.time() - start) * 1000)
+            span.set_attribute("mcp.tool.duration_ms", duration_ms)
+            span.set_attribute("mcp.tool.success", False)
+            span.set_attribute("error.message", str(e))
+            span.set_attribute("error.type", type(e).__name__)
+            span.set_status(SpanStatusCode.ERROR, str(e))
+            logger.exception("Tool call failed")
+            return [TextContent(type="text", text=f"Error: {e}")]
 
-        elif name == "get_shopping_list":
-            items = await cd.get_shopping_list_recipes()
-            return [TextContent(type="text", text=json.dumps(items, default=str, indent=2))]
 
-        elif name == "add_recipes_to_shopping_list":
-            result = await cd.add_shopping_list_recipes(arguments["recipe_ids"])
-            return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
-
-        elif name == "get_planned_recipes":
-            planned = await cd.get_planned_recipes(
-                arguments["start_date"],
-                arguments["end_date"],
-            )
-            return [TextContent(type="text", text=json.dumps(planned, default=str, indent=2))]
-
-        elif name == "import_web_recipe":
-            result = await cd.add_custom_recipe(
-                url=arguments["url"],
-                name=arguments.get("name"),
-            )
-            return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
-
-        elif name == "tick_off_items":
-            item_ids = arguments["item_ids"]
-            all_items = await cd.get_ingredient_items()
-            items_to_update = [
-                CookidooIngredientItem(id=item.id, name=item.name, description=item.description, is_owned=True)
-                for item in all_items if item.id in item_ids
-            ]
-            if items_to_update:
-                result = await cd.edit_ingredient_items_ownership(items_to_update)
-                return [TextContent(type="text", text=json.dumps({"updated": len(result), "items": [vars(i) for i in result]}, default=str, indent=2))]
-            return [TextContent(type="text", text=json.dumps({"updated": 0, "items": []}))]
-
-        elif name == "untick_items":
-            item_ids = arguments["item_ids"]
-            all_items = await cd.get_ingredient_items()
-            items_to_update = [
-                CookidooIngredientItem(id=item.id, name=item.name, description=item.description, is_owned=False)
-                for item in all_items if item.id in item_ids
-            ]
-            if items_to_update:
-                result = await cd.edit_ingredient_items_ownership(items_to_update)
-                return [TextContent(type="text", text=json.dumps({"updated": len(result), "items": [vars(i) for i in result]}, default=str, indent=2))]
-            return [TextContent(type="text", text=json.dumps({"updated": 0, "items": []}))]
-
-        elif name == "clear_shopping_list":
-            await cd.clear_shopping_list()
-            return [TextContent(type="text", text=json.dumps({"cleared": True}))]
-
-        else:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-    except Exception as e:
-        logger.exception("Tool call failed")
-        return [TextContent(type="text", text=f"Error: {e}")]
-
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
 async def main():
     await run_server(app)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
